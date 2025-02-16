@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Excel Bulk Emailer</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      padding: 0 10px;
+      box-sizing: border-box;
+    }
+    h1 {
+      font-size: 1.5em;
+      text-align: center;
+    }
+    a#downloadSample {
+      display: inline-block;
+      padding: 8px 12px;
+      background-color: #007BFF;
+      color: #fff;
+      text-decoration: none;
+      border-radius: 4px;
+      margin-bottom: 15px;
+    }
+    .credentials {
+      margin-bottom: 10px;
+    }
+    .credentials div {
+      margin-bottom: 10px;
+    }
+    .credentials label {
+      font-weight: bold;
+    }
+    .credentials input {
+      margin-left: 10px;
+      padding: 5px;
+      width: 80%;
+      max-width: 300px;
+    }
+    #saveCredentialsBtn {
+      padding: 5px 10px;
+      cursor: pointer;
+    }
+    #fileInput {
+      margin-bottom: 15px;
+      width: 100%;
+    }
+    #autoSendBtn,
+    #stopAutoSendBtn {
+      padding: 10px 15px;
+      margin-top: 10px;
+      cursor: pointer;
+    }
+    #stopAutoSendBtn {
+      margin-left: 10px;
+      background-color: #dc3545;
+      color: #fff;
+    }
+    #countdown {
+      margin-top: 15px;
+      font-weight: bold;
+    }
+    #preview {
+      margin-top: 20px;
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+      font-size: 0.9em;
+    }
+    tr.sent {
+      background-color: #d4edda;
+    }
+    button.send-btn {
+      padding: 5px 10px;
+      cursor: pointer;
+      font-size: 0.9em;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 600px) {
+      .credentials input {
+        width: 100%;
+        margin-left: 0;
+        margin-top: 5px;
+      }
+      table, th, td {
+        font-size: 0.8em;
+      }
+      #autoSendBtn, #stopAutoSendBtn {
+        width: 100%;
+        margin: 5px 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Excel to Email Sender</h1>
+  
+  <!-- Sample Excel file download -->
+  <a id="downloadSample" href="/sample.xlsx" download>Download Sample Excel File</a>
+  <br>
+
+  <!-- Credentials Input -->
+  <div class="credentials">
+    <div>
+      <label for="senderEmail">Email ID :</label>
+      <input type="email" id="senderEmail" placeholder="Enter your email" required>
+    </div>
+    <div>
+      <label for="senderPass">Password :</label>
+      <input type="password" id="senderPass" placeholder="Enter your password" required>
+    </div>
+    <button id="saveCredentialsBtn">Save Credentials</button>
+  </div>
+
+  <!-- File Upload & Auto Send Controls -->
+  <input type="file" id="fileInput" accept=".xlsx, .xls" />
+  <div>
+    <button id="autoSendBtn" disabled>Auto Send All</button>
+    <button id="stopAutoSendBtn" style="display:none;">Stop Auto Send</button>
+  </div>
+  
+  <!-- Countdown Timer Display -->
+  <div id="countdown"></div>
+  <div id="preview"></div>
+
+  <!-- Include SheetJS library for Excel parsing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script>
+    // Auto-fill credentials if saved in localStorage
+    document.addEventListener('DOMContentLoaded', () => {
+      const savedEmail = localStorage.getItem('senderEmail');
+      const savedPass = localStorage.getItem('senderPass');
+      if (savedEmail) document.getElementById('senderEmail').value = savedEmail;
+      if (savedPass) document.getElementById('senderPass').value = savedPass;
+    });
+
+    // Save credentials button functionality
+    document.getElementById('saveCredentialsBtn').addEventListener('click', () => {
+      const email = document.getElementById('senderEmail').value;
+      const pass = document.getElementById('senderPass').value;
+      if (!email || !pass) {
+        alert("Please enter both email and password to save.");
+        return;
+      }
+      localStorage.setItem('senderEmail', email);
+      localStorage.setItem('senderPass', pass);
+      alert("Credentials saved successfully!");
+    });
+
+    const fileInput = document.getElementById('fileInput');
+    const preview = document.getElementById('preview');
+    const autoSendBtn = document.getElementById('autoSendBtn');
+    const stopAutoSendBtn = document.getElementById('stopAutoSendBtn');
+    const countdownEl = document.getElementById('countdown');
+    let excelData = [];
+    let autoInterval = null;
+    let countdownInterval = null;
+    let autoSending = false; // flag indicating if auto-send is in progress
+
+    // Clear file input value on click so that same file selection triggers change event
+    fileInput.addEventListener('click', () => {
+      fileInput.value = '';
+    });
+
+    // File change event
+    fileInput.addEventListener('change', (e) => {
+      if (autoSending) {
+        alert("Auto-send is in progress. Please stop it before changing the file.");
+        fileInput.value = '';
+        return;
+      }
+      
+      // Clear previous data and preview
+      preview.innerHTML = '';
+      excelData = [];
+      autoSendBtn.disabled = true;
+      countdownEl.textContent = '';
+
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const data = new Uint8Array(event.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        excelData = XLSX.utils.sheet_to_json(worksheet);
+        displayData(excelData);
+        if (excelData.length) {
+          autoSendBtn.disabled = false;
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    // Function to display Excel data as a table
+    function displayData(data) {
+      if (!data || data.length === 0) {
+        preview.innerHTML = '<p>No data found in the Excel file.</p>';
+        return;
+      }
+      const keys = Object.keys(data[0]);
+      let html = '<table><thead><tr>';
+      keys.forEach(key => html += `<th>${key}</th>`);
+      html += '<th>Action</th></tr></thead><tbody>';
+      
+      data.forEach((row, index) => {
+        html += `<tr id="row-${index}">`;
+        keys.forEach(key => {
+          html += `<td>${row[key] !== undefined ? row[key] : ''}</td>`;
+        });
+        html += `<td><button class="send-btn" data-index="${index}">Send Email</button></td>`;
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      preview.innerHTML = html;
+
+      // Add click event to each send button
+      document.querySelectorAll('.send-btn').forEach((button) => {
+        button.addEventListener('click', () => {
+          const idx = button.getAttribute('data-index');
+          sendEmail(idx, excelData[idx]);
+        });
+      });
+    }
+
+    // Function to send email for a given row
+    async function sendEmail(index, rowData) {
+      const btn = document.querySelector(`#row-${index} .send-btn`);
+      if (btn.disabled) return;
+
+      // Get sender credentials
+      const senderEmail = document.getElementById('senderEmail').value;
+      const senderPass = document.getElementById('senderPass').value;
+      if (!senderEmail || !senderPass) {
+        alert("Please enter your email and password.");
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+
+      try {
+        const response = await fetch('/sendEmail', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            senderEmail,
+            senderPass,
+            emailData: rowData
+          })
+        });
+        if (response.ok) {
+          document.getElementById(`row-${index}`).classList.add('sent');
+          btn.textContent = 'Sent ✔';
+        } else {
+          btn.textContent = 'Failed, Retry';
+          btn.disabled = false;
+        }
+      } catch (err) {
+        console.error(err);
+        btn.textContent = 'Error, Retry';
+        btn.disabled = false;
+      }
+    }
+
+    // Auto-send functionality: sends first email immediately, then starts a 2-minute interval
+    autoSendBtn.addEventListener('click', () => {
+      if (excelData.length === 0) {
+        alert("No data to send. Please upload a valid Excel file.");
+        return;
+      }
+      autoSending = true;
+      fileInput.disabled = true;
+      autoSendBtn.disabled = true;
+      stopAutoSendBtn.style.display = 'inline-block';
+
+      let currentIndex = 0;
+      const intervalTime = 120000; // 2 minutes in milliseconds
+      let countdown = intervalTime / 1000; // seconds
+
+      // Send first email immediately
+      sendEmail(currentIndex, excelData[currentIndex]);
+      currentIndex++;
+
+      // Start countdown display
+      countdownEl.textContent = `Next email will be sent in: ${countdown} seconds`;
+      countdownInterval = setInterval(() => {
+        countdownEl.textContent = `Next email will be sent in: ${countdown} seconds`;
+        countdown--;
+      }, 1000);
+
+      // Start interval for subsequent emails
+      autoInterval = setInterval(() => {
+        if (currentIndex >= excelData.length) {
+          clearInterval(autoInterval);
+          clearInterval(countdownInterval);
+          countdownEl.textContent = 'All emails processed.';
+          fileInput.disabled = false;
+          autoSending = false;
+          stopAutoSendBtn.style.display = 'none';
+          return;
+        }
+        countdown = intervalTime / 1000; // reset countdown
+        sendEmail(currentIndex, excelData[currentIndex]);
+        currentIndex++;
+      }, intervalTime);
+    });
+
+    // Stop auto-send functionality
+    stopAutoSendBtn.addEventListener('click', () => {
+      if (autoInterval) clearInterval(autoInterval);
+      if (countdownInterval) clearInterval(countdownInterval);
+      countdownEl.textContent = 'Auto-send stopped.';
+      autoSendBtn.disabled = false;
+      fileInput.disabled = false;
+      autoSending = false;
+      stopAutoSendBtn.style.display = 'none';
+    });
+  </script>
+</body>
+</html>
