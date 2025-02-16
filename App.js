@@ -3,7 +3,7 @@ const nodemailer = require('nodemailer');
 const path = require('path');
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 4000;
 
 // To parse JSON bodies in POST requests
 app.use(express.json());
